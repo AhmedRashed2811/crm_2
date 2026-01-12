@@ -10,7 +10,9 @@ from .views import (
     ReasonCodeListAPI,
     LeadTimelineAPI, 
     LeadWorkflowAPI, 
-    LeadTasksAPI
+    LeadTasksAPI,
+    LeadTaskCreateCommandAPI,
+    LeadTaskMarkDoneCommandAPI
 )
 
 urlpatterns = [
@@ -21,6 +23,8 @@ urlpatterns = [
     path("v1/leads/<uuid:lead_id>/commands/assign/", LeadAssignCommandAPI.as_view(), name="lead_assign"),
     path("v1/leads/<uuid:lead_id>/commands/change-stage/", LeadChangeStageCommandAPI.as_view(), name="lead_change_stage"),
     path("v1/leads/<uuid:lead_id>/commands/add-timeline-event/", LeadAddTimelineEventCommandAPI.as_view(), name="lead_add_timeline_event"),
+    path("v1/leads/<uuid:lead_id>/commands/create-task/", LeadTaskCreateCommandAPI.as_view(), name="lead_create_task"),
+    path("v1/leads/<uuid:lead_id>/tasks/<uuid:task_id>/commands/mark-done/", LeadTaskMarkDoneCommandAPI.as_view(), name="lead_task_mark_done"),
     
     path("v1/reason-codes/", ReasonCodeListAPI.as_view(), name="reason_codes_list"),
     

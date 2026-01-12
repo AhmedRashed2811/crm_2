@@ -118,6 +118,17 @@ class LeadTaskSerializer(serializers.ModelSerializer):
         return str(obj.assigned_to_id) if obj.assigned_to_id else None
 
 
+class LeadTaskCreateCommandSerializer(serializers.Serializer):
+    title = serializers.CharField(required=True, max_length=160)
+    due_at = serializers.DateTimeField(required=False, allow_null=True)
+    assigned_to_id = serializers.IntegerField(required=False, allow_null=True)  # Optional: assign immediately
+    
+
+class LeadTaskMarkDoneCommandSerializer(serializers.Serializer):
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+    
+     
+
 class WorkflowEventSerializer(serializers.ModelSerializer):
     actor_id = serializers.SerializerMethodField()
 

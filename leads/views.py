@@ -45,6 +45,11 @@ from leads.services.leads_service import merge_leads
 from core.api.exceptions import PermissionDeniedError
 
 
+from leads.models import ReasonCode
+from leads.serializers import ReasonCodeListSerializer
+
+
+
 def build_ctx(request) -> RequestContext:
     return RequestContext(
         actor=request.user if request.user.is_authenticated else None,
@@ -188,6 +193,9 @@ class LeadListCreateAPI(APIView):
 class LeadDetailAPI(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses=LeadDetailSerializer(many=False),
+    )
     def get(self, request, lead_id):
         lead = Lead.objects.filter(id=lead_id, is_deleted=False).first()
         if not lead:
@@ -224,8 +232,6 @@ class LeadAssignCommandAPI(APIView):
         
         except PermissionDeniedError as e:
             return fail(errors=[{"code": e.code, "message": e.message, "details": e.details}], status=403)
-
-
 
 
 
@@ -287,8 +293,6 @@ class LeadAddTimelineEventCommandAPI(APIView):
 
 
 
-from leads.models import ReasonCode
-from leads.serializers import ReasonCodeListSerializer
 
 class ReasonCodeListAPI(APIView):
     permission_classes = [IsAuthenticated]
@@ -302,6 +306,7 @@ class ReasonCodeListAPI(APIView):
 class LeadTimelineAPI(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses=LeadTimelineEventSerializer(many=True))
     def get(self, request, lead_id):
         lead = Lead.objects.filter(id=lead_id, is_deleted=False).first()
         if not lead:
@@ -324,6 +329,7 @@ class LeadTimelineAPI(APIView):
 class LeadTasksAPI(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses=LeadTaskSerializer(many=True)) 
     def get(self, request, lead_id):
         lead = Lead.objects.filter(id=lead_id, is_deleted=False).first()
         if not lead:
@@ -334,6 +340,59 @@ class LeadTasksAPI(APIView):
 
         qs = LeadTask.objects.filter(lead_id=lead.id, is_deleted=False).order_by("-created_at")
         return ok(data=LeadTaskSerializer(qs, many=True).data)
+
+
+
+# leads/views.py
+
+from leads.serializers import LeadTaskCreateCommandSerializer, LeadTaskMarkDoneCommandSerializer
+from leads.services.leads_service import create_task, mark_task_done
+
+class LeadTaskCreateCommandAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=LeadTaskCreateCommandSerializer)
+    def post(self, request, lead_id):
+        ser = LeadTaskCreateCommandSerializer(data=request.data)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+
+        try:
+            data = create_task(
+                build_ctx(request),
+                lead_id=lead_id,
+                title=ser.validated_data["title"],
+                due_at=ser.validated_data.get("due_at"),
+                assigned_to_id=ser.validated_data.get("assigned_to_id"),
+            )
+            return ok(data=data, status=201)
+        except NotFoundError as e:
+            return fail(errors=[{"code": e.code, "message": e.message, "details": e.details}], status=404)
+        except ValidationError as e:
+            return fail(errors=[{"code": e.code, "message": e.message, "details": e.details}], status=400)
+
+
+class LeadTaskMarkDoneCommandAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=LeadTaskMarkDoneCommandSerializer)
+    def post(self, request, lead_id, task_id):
+        # We accept lead_id in URL for consistency, even if service finds task by task_id
+        ser = LeadTaskMarkDoneCommandSerializer(data=request.data)
+        if not ser.is_valid():
+             return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+
+        try:
+            data = mark_task_done(
+                build_ctx(request),
+                task_id=task_id,
+                note=ser.validated_data.get("note", "")
+            )
+            return ok(data=data, status=200)
+        except NotFoundError as e:
+            return fail(errors=[{"code": e.code, "message": e.message, "details": e.details}], status=404)
+
+
 
 
 class LeadWorkflowAPI(APIView):

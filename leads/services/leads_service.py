@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from django.db import transaction
@@ -113,7 +114,7 @@ def _get_lead_or_raise(lead_id) -> Lead:
     return lead
 
 
-def _get_or_create_instance(ctx: RequestContext, lead: Lead):
+def _get_or_create_workflow_instance(ctx: RequestContext, lead: Lead):
     instance = WorkflowInstance.objects.filter(entity_type=LEAD_ENTITY_TYPE, entity_id=lead.id).first()
     if instance:
         return instance
@@ -154,6 +155,7 @@ def assign_lead(
     override: bool = False,
     override_reason: str = "",
 ) -> Dict[str, Any]:
+    
     ensure_can_assign(ctx)
 
     lead = _get_lead_or_raise(lead_id)
@@ -219,7 +221,7 @@ def assign_lead(
 def change_stage(ctx: RequestContext, lead_id, action: str, to_stage: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     lead = _get_lead_or_raise(lead_id)
     ensure_can_transition(ctx, lead)
-    instance = _get_or_create_instance(ctx, lead)
+    instance = _get_or_create_workflow_instance(ctx, lead)
 
  
     before = _lead_to_dict(lead)
@@ -471,4 +473,101 @@ def merge_leads(ctx: RequestContext, primary_lead_id, secondary_lead_ids, reason
     return {
         "primary": after_primary,
         "merged_lead_ids": merged_ids,
+    }
+
+
+# leads/services/leads_service.py
+
+from leads.models import LeadTask
+# Ensure LeadTask is imported at the top
+
+@transaction.atomic
+def create_task(
+    ctx: RequestContext,
+    lead_id,
+    title: str,
+    due_at: Optional[datetime] = None,
+    assigned_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    # 1. Get Lead
+    lead = _get_lead_or_raise(lead_id)
+    
+    # 2. Validate User (if assigned)
+    assigned_user = None
+    if assigned_to_id:
+        assigned_user = User.objects.filter(id=assigned_to_id, is_active=True).first()
+        if not assigned_user:
+            raise ValidationError(
+                code="task.assign.invalid_user",
+                message="Assigned user not found or inactive",
+                details={"assigned_to_id": assigned_to_id}
+            )
+    else:
+        # Default assignment: The creator (actor) implies ownership, or leave null.
+        # Strategy: If no one specified, assign to the actor.
+        assigned_user = ctx.actor
+
+    # 3. Create
+    task = LeadTask.objects.create(
+        lead=lead,
+        title=title,
+        due_at=due_at,
+        assigned_to=assigned_user,
+        status="open",
+    )
+
+    # 4. Audit
+    audit_record(
+        ctx=ctx,
+        action="lead.task_created",
+        entity_type=LEAD_ENTITY_TYPE,
+        entity_id=lead.id,
+        message=f"Task created: {title}",
+        before=None,
+        after={
+            "task_id": str(task.id),
+            "title": task.title,
+            "status": task.status,
+            "assigned_to_id": str(task.assigned_to_id) if task.assigned_to_id else None
+        },
+        metadata={"due_at": str(due_at) if due_at else None}
+    )
+
+    return {
+        "id": str(task.id),
+        "title": task.title,
+        "status": task.status,
+        "created_at": task.created_at.isoformat(),
+        "assigned_to_id": str(task.assigned_to_id) if task.assigned_to_id else None,
+    }
+
+@transaction.atomic
+def mark_task_done(ctx: RequestContext, task_id, note: str = "") -> Dict[str, Any]:
+    # 1. Find Task
+    task = LeadTask.objects.filter(id=task_id).select_related("lead").first()
+    if not task:
+        raise NotFoundError(code="task.not_found", message="Task not found", details={"task_id": str(task_id)})
+
+    if task.status == "done":
+        return {"id": str(task.id), "status": "done", "completed_at": str(task.completed_at)}
+
+    # 2. Execute Logic
+    task.mark_done()
+
+    # 3. Audit
+    audit_record(
+        ctx=ctx,
+        action="lead.task_completed",
+        entity_type=LEAD_ENTITY_TYPE,
+        entity_id=task.lead_id,
+        message=f"Task completed: {task.title}",
+        before={"status": "open"},
+        after={"status": "done", "completed_at": str(task.completed_at)},
+        metadata={"task_id": str(task.id), "note": note}
+    )
+
+    return {
+        "id": str(task.id),
+        "status": task.status,
+        "completed_at": task.completed_at.isoformat()
     }
