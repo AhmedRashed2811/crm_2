@@ -26,11 +26,11 @@ from leads.utils.security import ensure_can_assign, ensure_can_transition, ensur
 from leads.utils.security import ensure_can_merge
 
 from leads.models import Lead, LeadIdentityPoint, LeadTimelineEvent, LeadTask
-
+from leads.services.routing_service import route_lead
 
 LEAD_ENTITY_TYPE = "leads.Lead"
 LEAD_WORKFLOW_KEY = "lead_lifecycle"
-
+ 
 
 def _lead_to_dict(lead: Lead) -> Dict[str, Any]:
     return {
@@ -57,10 +57,10 @@ def create_lead(
     ctx: RequestContext,
     payload: Dict[str, Any],
     *,
-    allow_duplicates: bool = False,   # ✅ new flag
+    allow_duplicates: bool = False,
 ) -> Dict[str, Any]:
 
-
+    # --- 1. Validation & Identity Checks (Existing Code) ---
     phone = (payload.get("primary_phone") or "").strip()
     email = (payload.get("primary_email") or "").strip()
 
@@ -69,8 +69,11 @@ def create_lead(
             type="phone", value=phone, is_deleted=False
         ).select_related("lead").first()
         if existing and not existing.lead.is_deleted:
-            raise ValidationError(...)
-
+             raise ValidationError(
+                code="lead.duplicate_identity",
+                message="A lead with this phone already exists.",
+                details={"type": "phone", "value": phone, "existing_lead_id": str(existing.lead_id)},
+            )
 
     if email:
         existing = LeadIdentityPoint.objects.filter(type="email", value=email, is_deleted=False).select_related("lead").first()
@@ -81,6 +84,7 @@ def create_lead(
                 details={"type": "email", "value": email, "existing_lead_id": str(existing.lead_id)},
             )
 
+    # --- 2. Create Lead Object ---
     lead = Lead.objects.create(
         full_name=(payload.get("full_name") or "").strip(),
         primary_phone=phone,
@@ -90,19 +94,45 @@ def create_lead(
         campaign=(payload.get("campaign") or "").strip(),
         marketing_opt_in=payload.get("marketing_opt_in", True),
         do_not_contact=payload.get("do_not_contact", False),
-        qualification=payload.get("qualification"),
+        
+        # ✅ Ensure these fields are saved so Routing can use them
+        score_bucket=payload.get("score_bucket", "COLD"), 
+        qualification=payload.get("qualification", {}),
+        
         stage="NEW",
-        first_response_due_at=timezone.now() + timezone.timedelta(minutes=30),
+        first_response_due_at=timezone.now() + timezone.timedelta(minutes=30), # Default fallback
     )
 
-    # ✅ Now safe to create identity points (no duplicates expected)
+    # --- 3. Create Identity Points ---
     if lead.primary_phone:
         LeadIdentityPoint.objects.create(lead=lead, type="phone", value=lead.primary_phone, is_primary=True)
     if lead.primary_email:
         LeadIdentityPoint.objects.create(lead=lead, type="email", value=lead.primary_email, is_primary=True)
 
-    # workflow + audit unchanged...
+    # --- 4. ⚡ EXECUTE ROUTING ENGINE (The Missing Piece) ---
+    # Only route if no owner was manually assigned during creation
+    if not lead.owner_id:
+        route_lead(ctx, lead) 
+        
+        lead.refresh_from_db()
+        # Note: route_lead calls .save() internally if it finds a match
 
+    # --- 5. Workflow & Audit (The Rest of the Function) ---
+    # Ensure this part is NOT deleted
+    instance = _get_or_create_workflow_instance(ctx, lead)
+    
+    audit_record(
+        ctx=ctx,
+        action="lead.created",
+        entity_type=LEAD_ENTITY_TYPE,
+        entity_id=lead.id,
+        message="Lead created",
+        before=None,
+        after=_lead_to_dict(lead),
+        metadata=payload
+    )
+
+    return _lead_to_dict(lead)
 
 User = get_user_model()
 

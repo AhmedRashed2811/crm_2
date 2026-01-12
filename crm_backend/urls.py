@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from core.views import UserListAPI
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -10,5 +11,6 @@ urlpatterns = [
 
     path("api-auth/", include("rest_framework.urls")),  # ✅ add this
     path("api/", include("leads.urls")),
+    path("api/v1/users/", UserListAPI.as_view(), name="global_user_list"),
 ]
 

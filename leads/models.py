@@ -172,3 +172,119 @@ class LeadTask(BaseUUIDModel):
             self.status = "done"
             self.completed_at = timezone.now()
             self.save(update_fields=["status", "completed_at", "updated_at"])
+            
+            
+# leads/models.py
+
+from django.db import models
+from django.conf import settings
+from core.models import BaseUUIDModel
+
+class SalesTeam(BaseUUIDModel):
+    """
+    Represents a pool of agents (e.g., 'Alpha Team', 'VIP Handlers').
+    SRS: Supports Routing Engine targets.
+    """
+    DISTRIBUTION_METHOD_CHOICES = [
+        ("ROUND_ROBIN", "Round Robin"),
+        ("WEIGHTED", "Weighted Random"),
+        ("BROADCAST", "Broadcast / Cherry Pick"), # Everyone sees it, first to claim wins
+    ]
+
+    name = models.CharField(max_length=120)
+    distribution_method = models.CharField(
+        max_length=20, 
+        choices=DISTRIBUTION_METHOD_CHOICES, 
+        default="ROUND_ROBIN"
+    )
+    
+    # SRS: "Team Coverage" - We can add working hours here later
+    
+    def __str__(self):
+        return f"{self.name} ({self.get_distribution_method_display()})"
+
+
+class TeamMember(BaseUUIDModel):
+    """
+    Links a User to a Team with routing properties.
+    SRS: Supports 'Weighted distribution' & 'Performance-based routing'.
+    """
+    team = models.ForeignKey(SalesTeam, on_delete=models.CASCADE, related_name="members")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    
+    # For Weighted Distribution (e.g., Senior gets 100, Junior gets 50)
+    weight = models.PositiveIntegerField(default=100)
+    
+    # For Round Robin: Tracks when they last got a lead
+    last_assigned_at = models.DateTimeField(null=True, blank=True)
+    
+    # For Availability (Vacation/Shift)
+    is_available = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ("team", "user")
+        ordering = ["last_assigned_at"] # Crucial for Round Robin (oldest timestamp = next in line)
+
+class RoutingRule(BaseUUIDModel):
+    """
+    The Decision Logic.
+    SRS: "Apply routing rules by project, language, availability, or priority."
+    """
+    name = models.CharField(max_length=120)
+    priority = models.PositiveIntegerField(default=0, db_index=True)  # Priority 0 runs first
+    is_active = models.BooleanField(default=True)
+
+    # --- CRITERIA (The "IF" part) ---
+    # We use JSON for flexibility or specific fields. Let's use strict fields for performance.
+    
+    # SRS: "Project/phase interest"
+    project_scope = models.CharField(max_length=120, blank=True, null=True, help_text="Matches Lead.interest")
+    
+    # SRS: "Nationality / Language"
+    language = models.CharField(max_length=10, blank=True, null=True, help_text="e.g. 'en', 'ar'")
+    
+    # SRS: "Preferred Channel"
+    source = models.CharField(max_length=80, blank=True, null=True, help_text="e.g. 'whatsapp', 'walk_in'")
+    
+    # SRS: "VIP leads"
+    score_bucket = models.CharField(max_length=20, blank=True, null=True, help_text="e.g. 'HOT', 'VIP'")
+
+    # --- TARGET (The "THEN" part) ---
+    target_team = models.ForeignKey(SalesTeam, on_delete=models.CASCADE)
+    
+    # SRS: SLA Enforcement
+    sla_minutes = models.PositiveIntegerField(
+        default=60, 
+        help_text="Expected response time in minutes for leads matching this rule."
+    )
+
+    class Meta:
+        ordering = ["priority"]
+
+    def matches(self, lead) -> bool:
+        """
+        Check if lead matches criteria. None/Empty fields act as Wildcards.
+        """
+        # 1. Source Check
+        if self.source and self.source != lead.source:
+            return False
+        
+        # 2. Score Check
+        if self.score_bucket and self.score_bucket != lead.score_bucket:
+            return False
+            
+        # 3. Language Check (STRICT FIX)
+        # If rule specifies a language, the lead MUST match it. Missing = Mismatch.
+        if self.language:
+            lead_lang = (lead.qualification or {}).get("language")
+            if lead_lang != self.language:
+                return False
+
+        # 4. Project Scope Check (ADDED MISSING LOGIC)
+        # If rule specifies a project, the lead MUST have that interest.
+        if self.project_scope:
+            lead_interest = (lead.qualification or {}).get("interest")
+            if lead_interest != self.project_scope:
+                return False
+                
+        return True

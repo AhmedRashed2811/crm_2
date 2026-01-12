@@ -1,5 +1,15 @@
 from django.contrib import admin
-from .models import Lead, LeadIdentityPoint, LeadTimelineEvent, LeadTask, ReasonCode
+from .models import (
+    Lead, 
+    LeadIdentityPoint, 
+    LeadTimelineEvent, 
+    LeadTask, 
+    ReasonCode,
+    SalesTeam,
+    TeamMember,
+    RoutingRule
+)
+
 
 
 @admin.register(ReasonCode)
@@ -92,3 +102,60 @@ class LeadTaskAdmin(admin.ModelAdmin):
     search_fields = ("title", "lead__id", "lead__full_name")
     ordering = ("-created_at",)
     readonly_fields = ("id", "created_at", "updated_at", "completed_at")
+
+
+
+
+# ==========================================
+#  ROUTING ENGINE ADMIN
+# ==========================================
+
+class TeamMemberInline(admin.TabularInline):
+    """
+    Allows adding members directly inside the SalesTeam view.
+    """
+    model = TeamMember
+    extra = 1
+    fields = ("user", "weight", "is_available", "last_assigned_at")
+    # last_assigned_at is editable so admins can reset round-robin position manually if needed
+
+
+@admin.register(SalesTeam)
+class SalesTeamAdmin(admin.ModelAdmin):
+    list_display = ("name", "distribution_method", "member_count", "created_at")
+    search_fields = ("name",)
+    list_filter = ("distribution_method",)
+    inlines = [TeamMemberInline]
+    
+    def member_count(self, obj):
+        return obj.members.count()
+    member_count.short_description = "Members"
+
+
+@admin.register(TeamMember)
+class TeamMemberAdmin(admin.ModelAdmin):
+    list_display = ("user", "team", "weight", "is_available", "last_assigned_at")
+    list_filter = ("team", "is_available")
+    search_fields = ("user__username", "user__email", "team__name")
+    ordering = ("team", "user")
+
+
+@admin.register(RoutingRule)
+class RoutingRuleAdmin(admin.ModelAdmin):
+    list_display = ("priority", "name", "is_active", "target_team", "sla_minutes")
+    list_filter = ("is_active", "target_team")
+    search_fields = ("name", "source", "language", "score_bucket")
+    ordering = ("priority",)
+    
+    fieldsets = (
+        ("Configuration", {
+            "fields": ("name", "priority", "is_active")
+        }),
+        ("Criteria (The IF Condition)", {
+            "description": "Leave fields empty to act as wildcards (match all).",
+            "fields": ("source", "score_bucket", "language", "project_scope")
+        }),
+        ("Target (The THEN Action)", {
+            "fields": ("target_team", "sla_minutes")
+        }),
+    )

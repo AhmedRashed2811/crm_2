@@ -19,8 +19,12 @@ class LeadCreateSerializer(serializers.Serializer):
     marketing_opt_in = serializers.BooleanField(required=False)
     do_not_contact = serializers.BooleanField(required=False)
 
+    score_bucket = serializers.CharField(required=False, allow_blank=True)
+    
     # v1: allow passing qualification payload
     qualification = serializers.JSONField(required=False)
+    
+    
 
     def validate(self, attrs):
         phone = (attrs.get("primary_phone") or "").strip()
