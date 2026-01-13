@@ -27,6 +27,8 @@ from leads.utils.security import ensure_can_merge
 
 from leads.models import Lead, LeadIdentityPoint, LeadTimelineEvent, LeadTask
 from leads.services.routing_service import route_lead
+from leads.services.scoring_service import run_scoring_engine 
+
 
 LEAD_ENTITY_TYPE = "leads.Lead"
 LEAD_WORKFLOW_KEY = "lead_lifecycle"
@@ -117,6 +119,9 @@ def create_lead(
         lead.refresh_from_db()
         # Note: route_lead calls .save() internally if it finds a match
 
+    # This ensures every new lead starts with a Score and Next Best Action
+    run_scoring_engine(lead)
+    
     # --- 5. Workflow & Audit (The Rest of the Function) ---
     # Ensure this part is NOT deleted
     instance = _get_or_create_workflow_instance(ctx, lead)

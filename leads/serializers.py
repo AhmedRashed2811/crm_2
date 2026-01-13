@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import serializers
-from .models import Lead, LeadTimelineEvent, LeadTask
+from .models import Lead, LeadTimelineEvent, LeadTask, ScoringRule, ScoreBucket
 from core.api.exceptions import PermissionDeniedError
 from leads.utils.security import ensure_can_assign, ensure_can_transition, ensure_can_add_timeline
 
@@ -154,3 +154,18 @@ class LeadMergeCommandSerializer(serializers.Serializer):
     def validate_secondary_lead_ids(self, ids):
         unique_ids = list(dict.fromkeys(ids))
         return unique_ids
+    
+    
+    
+class ScoringRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScoringRule
+        fields = [
+            'id', 'name', 'category', 'keyword', 
+            'match_type', 'points', 'is_active'
+        ]
+
+class ScoreBucketSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScoreBucket
+        fields = ['id', 'name', 'min_score', 'priority', 'color']

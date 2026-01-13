@@ -12,7 +12,11 @@ from .views import (
     LeadWorkflowAPI, 
     LeadTasksAPI,
     LeadTaskCreateCommandAPI,
-    LeadTaskMarkDoneCommandAPI
+    LeadTaskMarkDoneCommandAPI,
+    ScoringRuleListCreateAPI,
+    ScoringRuleDetailAPI,
+    ScoreBucketListCreateAPI,
+    ScoreBucketDetailAPI
 )
 
 urlpatterns = [
@@ -35,5 +39,14 @@ urlpatterns = [
 
     path("v1/leads/<uuid:lead_id>/duplicates/", LeadDuplicatesAPI.as_view(), name="lead_duplicates"),
     path("v1/leads/<uuid:lead_id>/commands/merge/", LeadMergeCommandAPI.as_view(), name="lead_merge"),
+
+    
+    # --- NEW: Dynamic Scoring URLs ---
+    path("v1/scoring-rules/", ScoringRuleListCreateAPI.as_view(), name="scoring_rules_list"),
+    path("v1/scoring-rules/<uuid:rule_id>/", ScoringRuleDetailAPI.as_view(), name="scoring_rules_detail"),
+
+    path("v1/score-buckets/", ScoreBucketListCreateAPI.as_view(), name="score_buckets_list"),
+    path("v1/score-buckets/<uuid:bucket_id>/", ScoreBucketDetailAPI.as_view(), name="score_buckets_detail"),
+
 
 ]

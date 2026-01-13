@@ -49,6 +49,9 @@ from leads.models import ReasonCode
 from leads.serializers import ReasonCodeListSerializer
 
 
+from leads.models import ScoringRule, ScoreBucket
+from leads.serializers import ScoringRuleSerializer, ScoreBucketSerializer
+
 
 def build_ctx(request) -> RequestContext:
     return RequestContext(
@@ -486,3 +489,97 @@ class LeadMergeCommandAPI(APIView):
             return fail(errors=[{"code": e.code, "message": e.message, "details": e.details}], status=404)
         except ValidationError as e:
             return fail(errors=[{"code": e.code, "message": e.message, "details": e.details}], status=400)
+
+
+
+
+class ScoringRuleListCreateAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses=ScoringRuleSerializer(many=True),
+        request=ScoringRuleSerializer
+    )
+    def get(self, request):
+        qs = ScoringRule.objects.filter(is_deleted=False).order_by('category', '-points')
+        return ok(data=ScoringRuleSerializer(qs, many=True).data)
+
+    @extend_schema(request=ScoringRuleSerializer)
+    def post(self, request):
+        ser = ScoringRuleSerializer(data=request.data)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+        
+        rule = ser.save(created_by=request.user) # AuditableModel needs created_by
+        return ok(data=ScoringRuleSerializer(rule).data, status=201)
+
+class ScoringRuleDetailAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=ScoringRuleSerializer)
+    def put(self, request, rule_id):
+        rule = ScoringRule.objects.filter(id=rule_id, is_deleted=False).first()
+        if not rule:
+            return fail(errors=[{"code": "not_found", "message": "Rule not found"}], status=404)
+        
+        ser = ScoringRuleSerializer(rule, data=request.data, partial=True)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+
+        rule = ser.save(updated_by=request.user)
+        return ok(data=ScoringRuleSerializer(rule).data)
+
+    def delete(self, request, rule_id):
+        rule = ScoringRule.objects.filter(id=rule_id, is_deleted=False).first()
+        if not rule:
+            return fail(errors=[{"code": "not_found", "message": "Rule not found"}], status=404)
+        
+        rule.soft_delete(user=request.user) # Assuming AuditableModel has soft_delete
+        return ok(data={"message": "Rule deleted"})
+
+
+# --- Score Bucket Views ---
+
+class ScoreBucketListCreateAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses=ScoreBucketSerializer(many=True),
+        request=ScoreBucketSerializer
+    )
+    def get(self, request):
+        qs = ScoreBucket.objects.filter(is_deleted=False).order_by('-min_score')
+        return ok(data=ScoreBucketSerializer(qs, many=True).data)
+
+    @extend_schema(request=ScoreBucketSerializer)
+    def post(self, request):
+        ser = ScoreBucketSerializer(data=request.data)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+        
+        bucket = ser.save(created_by=request.user)
+        return ok(data=ScoreBucketSerializer(bucket).data, status=201)
+
+class ScoreBucketDetailAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=ScoreBucketSerializer)
+    def put(self, request, bucket_id):
+        bucket = ScoreBucket.objects.filter(id=bucket_id, is_deleted=False).first()
+        if not bucket:
+            return fail(errors=[{"code": "not_found", "message": "Bucket not found"}], status=404)
+        
+        ser = ScoreBucketSerializer(bucket, data=request.data, partial=True)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+
+        bucket = ser.save(updated_by=request.user)
+        return ok(data=ScoreBucketSerializer(bucket).data)
+
+    def delete(self, request, bucket_id):
+        bucket = ScoreBucket.objects.filter(id=bucket_id, is_deleted=False).first()
+        if not bucket:
+            return fail(errors=[{"code": "not_found", "message": "Bucket not found"}], status=404)
+        
+        bucket.soft_delete(user=request.user)
+        return ok(data={"message": "Bucket deleted"})

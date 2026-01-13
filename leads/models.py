@@ -288,3 +288,52 @@ class RoutingRule(BaseUUIDModel):
                 return False
                 
         return True
+    
+    
+    
+
+# ==========================================
+# 3. DYNAMIC SCORING MODELS (NEW)
+# ==========================================
+
+class ScoringRule(BaseUUIDModel):
+    """
+    Dynamic Rules for Lead Scoring.
+    """
+    CATEGORY_CHOICES = (
+        ('budget', 'Budget'),
+        ('title', 'Job Title'),
+        ('source', 'Source'),
+        ('country', 'Country'),
+    )
+    
+    MATCH_TYPE_CHOICES = (
+        ('exact', 'Exact Match'),       
+        ('contains', 'Contains'),       
+    )
+
+    name = models.CharField(max_length=255, help_text="Internal name for this rule")
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, db_index=True)
+    keyword = models.CharField(max_length=255, help_text="Value to match (e.g., 'CEO', '10M+')")
+    match_type = models.CharField(max_length=20, choices=MATCH_TYPE_CHOICES, default='contains')
+    points = models.IntegerField(default=0, help_text="Points to add (can be negative)")
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.category.upper()}: {self.keyword} ({self.points} pts)"
+
+
+class ScoreBucket(BaseUUIDModel):
+    """
+    Thresholds for classification.
+    """
+    name = models.CharField(max_length=50, unique=True) # HOT, WARM, COLD
+    min_score = models.IntegerField(unique=True, help_text="Minimum score required")
+    priority = models.IntegerField(default=0, help_text="High priority buckets checked first")
+    color = models.CharField(max_length=20, default="#FFFFFF", help_text="Hex code for UI")
+
+    class Meta:
+        ordering = ['-min_score']
+
+    def __str__(self):
+        return f"{self.name} (>{self.min_score})"

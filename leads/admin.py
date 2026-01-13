@@ -7,7 +7,9 @@ from .models import (
     ReasonCode,
     SalesTeam,
     TeamMember,
-    RoutingRule
+    RoutingRule,
+    ScoringRule, 
+    ScoreBucket
 )
 
 
@@ -159,3 +161,17 @@ class RoutingRuleAdmin(admin.ModelAdmin):
             "fields": ("target_team", "sla_minutes")
         }),
     )
+    
+    
+    
+@admin.register(ScoringRule)
+class ScoringRuleAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'keyword', 'points', 'is_active')
+    list_filter = ('category', 'is_active')
+    search_fields = ('name', 'keyword')
+    ordering = ('category', '-points')
+
+@admin.register(ScoreBucket)
+class ScoreBucketAdmin(admin.ModelAdmin):
+    list_display = ('name', 'min_score', 'color')
+    ordering = ('-min_score',)
