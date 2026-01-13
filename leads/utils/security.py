@@ -51,3 +51,25 @@ def ensure_can_merge(ctx: RequestContext):
     if user_in_groups(ctx.actor, ROLE_ADMIN + ROLE_MANAGER):
         return
     raise PermissionDeniedError(code="lead.merge.forbidden", message="Not allowed to merge leads")
+
+
+
+def ensure_can_update_lead(ctx: RequestContext, lead: Lead):
+    """
+    Check if actor can modify the lead (Log calls, schedule visits).
+    Rule: Admin OR Owner.
+    """
+    # 1. Admin / System always ok
+    if user_in_groups(ctx.actor, ROLE_ADMIN + ROLE_MANAGER):
+        return
+
+    # 2. Owner
+    if lead.owner_id == ctx.actor.id:
+        return
+
+    # 3. (Optional) Supervisor check could go here
+    
+    raise PermissionDeniedError(
+        code="lead.update_forbidden", 
+        message="You do not have permission to update this lead."
+    )

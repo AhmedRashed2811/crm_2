@@ -16,7 +16,10 @@ from .views import (
     ScoringRuleListCreateAPI,
     ScoringRuleDetailAPI,
     ScoreBucketListCreateAPI,
-    ScoreBucketDetailAPI
+    ScoreBucketDetailAPI,
+    LeadCallLogListCreateAPI,
+    LeadSiteVisitListCreateAPI,
+    LeadSiteVisitDetailAPI
 )
 
 urlpatterns = [
@@ -47,6 +50,11 @@ urlpatterns = [
 
     path("v1/score-buckets/", ScoreBucketListCreateAPI.as_view(), name="score_buckets_list"),
     path("v1/score-buckets/<uuid:bucket_id>/", ScoreBucketDetailAPI.as_view(), name="score_buckets_detail"),
+    
+    
+    path("v1/leads/<uuid:lead_id>/call-logs/", LeadCallLogListCreateAPI.as_view(), name="lead_call_logs"),
+    path("v1/leads/<uuid:lead_id>/site-visits/", LeadSiteVisitListCreateAPI.as_view(), name="lead_site_visits"),
+    path("v1/leads/<uuid:lead_id>/site-visits/<uuid:visit_id>/", LeadSiteVisitDetailAPI.as_view(), name="lead_site_visit_detail"),
 
 
 ]

@@ -337,3 +337,74 @@ class ScoreBucket(BaseUUIDModel):
 
     def __str__(self):
         return f"{self.name} (>{self.min_score})"
+    
+    
+    
+# ... (Previous code) ...
+
+# ==========================================
+# 4. ENGAGEMENT LAYER (Phase 4)
+# ==========================================
+
+class CallLog(BaseUUIDModel):
+    """
+    Structured record of phone interactions.
+    """
+    DIRECTION_CHOICES = (
+        ('INBOUND', 'Inbound'),
+        ('OUTBOUND', 'Outbound'),
+    )
+    
+    OUTCOME_CHOICES = (
+        ('ANSWERED', 'Answered'),
+        ('NO_ANSWER', 'No Answer'),
+        ('BUSY', 'Busy'),
+        ('WRONG_NUMBER', 'Wrong Number'),
+        ('VOICEMAIL', 'Voicemail'),
+        ('WHATSAPP', 'WhatsApp Call'),
+    )
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="call_logs")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="logged_calls")
+    
+    direction = models.CharField(max_length=10, choices=DIRECTION_CHOICES, default='OUTBOUND')
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, db_index=True)
+    duration = models.PositiveIntegerField(default=0, help_text="Duration in seconds")
+    
+    note = models.TextField(blank=True, default="")
+    recording_url = models.URLField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.direction} Call: {self.outcome} ({self.duration}s)"
+
+
+class SiteVisit(BaseUUIDModel):
+    """
+    Physical appointments and visits.
+    """
+    STATUS_CHOICES = (
+        ('SCHEDULED', 'Scheduled'),
+        ('CONFIRMED', 'Confirmed'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELED', 'Canceled'),
+        ('NO_SHOW', 'No Show'),
+    )
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="site_visits")
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="assigned_visits")
+    
+    project_name = models.CharField(max_length=120, help_text="Name of project being visited (Text for now)")
+    location = models.CharField(max_length=255, default="Site Office")
+    scheduled_at = models.DateTimeField(db_index=True)
+    
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SCHEDULED', db_index=True)
+    feedback = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ['-scheduled_at']
+
+    def __str__(self):
+        return f"Visit to {self.project_name} ({self.status})"

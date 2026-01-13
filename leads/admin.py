@@ -9,7 +9,9 @@ from .models import (
     TeamMember,
     RoutingRule,
     ScoringRule, 
-    ScoreBucket
+    ScoreBucket,
+    CallLog, 
+    SiteVisit
 )
 
 
@@ -175,3 +177,16 @@ class ScoringRuleAdmin(admin.ModelAdmin):
 class ScoreBucketAdmin(admin.ModelAdmin):
     list_display = ('name', 'min_score', 'color')
     ordering = ('-min_score',)
+    
+    
+@admin.register(CallLog)
+class CallLogAdmin(admin.ModelAdmin):
+    list_display = ('lead', 'actor', 'outcome', 'duration', 'created_at')
+    list_filter = ('outcome', 'direction', 'created_at')
+    search_fields = ('lead__full_name', 'note')
+
+@admin.register(SiteVisit)
+class SiteVisitAdmin(admin.ModelAdmin):
+    list_display = ('lead', 'project_name', 'status', 'scheduled_at', 'assigned_to')
+    list_filter = ('status', 'scheduled_at')
+    search_fields = ('lead__full_name', 'project_name')

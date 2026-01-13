@@ -492,7 +492,6 @@ class LeadMergeCommandAPI(APIView):
 
 
 
-
 class ScoringRuleListCreateAPI(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -510,7 +509,8 @@ class ScoringRuleListCreateAPI(APIView):
         if not ser.is_valid():
             return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
         
-        rule = ser.save(created_by=request.user) # AuditableModel needs created_by
+        # FIX: Removed created_by=request.user
+        rule = ser.save() 
         return ok(data=ScoringRuleSerializer(rule).data, status=201)
 
 class ScoringRuleDetailAPI(APIView):
@@ -526,7 +526,8 @@ class ScoringRuleDetailAPI(APIView):
         if not ser.is_valid():
             return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
 
-        rule = ser.save(updated_by=request.user)
+        # FIX: Removed updated_by=request.user
+        rule = ser.save()
         return ok(data=ScoringRuleSerializer(rule).data)
 
     def delete(self, request, rule_id):
@@ -534,11 +535,14 @@ class ScoringRuleDetailAPI(APIView):
         if not rule:
             return fail(errors=[{"code": "not_found", "message": "Rule not found"}], status=404)
         
-        rule.soft_delete(user=request.user) # Assuming AuditableModel has soft_delete
+        # Soft delete doesn't require user if model doesn't support it, 
+        # but let's check if soft_delete accepts it. 
+        # BaseUUIDModel.soft_delete() usually just sets is_deleted=True.
+        rule.soft_delete() 
         return ok(data={"message": "Rule deleted"})
 
 
-# --- Score Bucket Views ---
+# --- Score Bucket Views (FIXED) ---
 
 class ScoreBucketListCreateAPI(APIView):
     permission_classes = [IsAuthenticated]
@@ -557,7 +561,8 @@ class ScoreBucketListCreateAPI(APIView):
         if not ser.is_valid():
             return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
         
-        bucket = ser.save(created_by=request.user)
+        # FIX: Removed created_by
+        bucket = ser.save()
         return ok(data=ScoreBucketSerializer(bucket).data, status=201)
 
 class ScoreBucketDetailAPI(APIView):
@@ -573,7 +578,8 @@ class ScoreBucketDetailAPI(APIView):
         if not ser.is_valid():
             return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
 
-        bucket = ser.save(updated_by=request.user)
+        # FIX: Removed updated_by
+        bucket = ser.save()
         return ok(data=ScoreBucketSerializer(bucket).data)
 
     def delete(self, request, bucket_id):
@@ -581,5 +587,77 @@ class ScoreBucketDetailAPI(APIView):
         if not bucket:
             return fail(errors=[{"code": "not_found", "message": "Bucket not found"}], status=404)
         
-        bucket.soft_delete(user=request.user)
+        bucket.soft_delete()
         return ok(data={"message": "Bucket deleted"})
+  
+  
+    
+# ... existing imports ...
+from leads.serializers import (
+    CallLogSerializer, CallLogCreateSerializer,
+    SiteVisitSerializer, SiteVisitCreateSerializer, SiteVisitUpdateSerializer
+)
+from leads.services.interaction_service import log_call, schedule_site_visit, update_site_visit
+from leads.models import CallLog, SiteVisit
+
+class LeadCallLogListCreateAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=CallLogSerializer(many=True))
+    def get(self, request, lead_id):
+        # List calls for a lead
+        qs = CallLog.objects.filter(lead_id=lead_id).order_by('-created_at')
+        return ok(data=CallLogSerializer(qs, many=True).data)
+
+    @extend_schema(request=CallLogCreateSerializer)
+    def post(self, request, lead_id):
+        ser = CallLogCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+        
+        try:
+            data = log_call(build_ctx(request), lead_id, ser.validated_data)
+            return ok(data=data, status=201)
+        except NotFoundError as e:
+            return fail(errors=[{"code": "not_found", "message": e.message}], status=404)
+        except PermissionDeniedError as e:
+            return fail(errors=[{"code": "forbidden", "message": e.message}], status=403)
+
+class LeadSiteVisitListCreateAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=SiteVisitSerializer(many=True))
+    def get(self, request, lead_id):
+        qs = SiteVisit.objects.filter(lead_id=lead_id).order_by('-scheduled_at')
+        return ok(data=SiteVisitSerializer(qs, many=True).data)
+
+    @extend_schema(request=SiteVisitCreateSerializer)
+    def post(self, request, lead_id):
+        ser = SiteVisitCreateSerializer(data=request.data)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+        
+        try:
+            data = schedule_site_visit(build_ctx(request), lead_id, ser.validated_data)
+            return ok(data=data, status=201)
+        except NotFoundError as e:
+            return fail(errors=[{"code": "not_found", "message": e.message}], status=404)
+        except PermissionDeniedError as e:
+            return fail(errors=[{"code": "forbidden", "message": e.message}], status=403)
+
+class LeadSiteVisitDetailAPI(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=SiteVisitUpdateSerializer)
+    def patch(self, request, lead_id, visit_id):
+        ser = SiteVisitUpdateSerializer(data=request.data, partial=True)
+        if not ser.is_valid():
+            return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
+        
+        try:
+            data = update_site_visit(build_ctx(request), lead_id, visit_id, ser.validated_data)
+            return ok(data=data)
+        except NotFoundError as e:
+            return fail(errors=[{"code": "not_found", "message": e.message}], status=404)
+        except PermissionDeniedError as e:
+            return fail(errors=[{"code": "forbidden", "message": e.message}], status=403)

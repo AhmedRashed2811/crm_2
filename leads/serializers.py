@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rest_framework import serializers
-from .models import Lead, LeadTimelineEvent, LeadTask, ScoringRule, ScoreBucket
+from .models import Lead, LeadTimelineEvent, LeadTask, ScoringRule, ScoreBucket, CallLog, SiteVisit
 from core.api.exceptions import PermissionDeniedError
 from leads.utils.security import ensure_can_assign, ensure_can_transition, ensure_can_add_timeline
 
@@ -169,3 +169,44 @@ class ScoreBucketSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScoreBucket
         fields = ['id', 'name', 'min_score', 'priority', 'color']
+        
+        
+        
+# --- Call Log ---
+class CallLogSerializer(serializers.ModelSerializer):
+    actor_id = serializers.SerializerMethodField()
+    class Meta:
+        model = CallLog
+        fields = ['id', 'created_at', 'direction', 'outcome', 'duration', 'note', 'recording_url', 'actor_id']
+
+    def get_actor_id(self, obj):
+        return str(obj.actor_id) if obj.actor_id else None
+
+class CallLogCreateSerializer(serializers.Serializer):
+    direction = serializers.ChoiceField(choices=CallLog.DIRECTION_CHOICES, default="OUTBOUND")
+    outcome = serializers.ChoiceField(choices=CallLog.OUTCOME_CHOICES)
+    duration = serializers.IntegerField(min_value=0)
+    note = serializers.CharField(required=False, allow_blank=True)
+    recording_url = serializers.URLField(required=False, allow_blank=True, allow_null=True)
+    
+    
+    
+# --- Site Visit ---
+class SiteVisitSerializer(serializers.ModelSerializer):
+    assigned_to_id = serializers.SerializerMethodField()
+    class Meta:
+        model = SiteVisit
+        fields = ['id', 'created_at', 'project_name', 'location', 'scheduled_at', 'status', 'feedback', 'assigned_to_id']
+
+    def get_assigned_to_id(self, obj):
+        return str(obj.assigned_to_id) if obj.assigned_to_id else None
+
+class SiteVisitCreateSerializer(serializers.Serializer):
+    project_name = serializers.CharField(max_length=120)
+    location = serializers.CharField(max_length=255, default="Site Office")
+    scheduled_at = serializers.DateTimeField()
+    assigned_to_id = serializers.IntegerField(required=False) # Optional, defaults to actor
+
+class SiteVisitUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=SiteVisit.STATUS_CHOICES)
+    feedback = serializers.CharField(required=False, allow_blank=True)
