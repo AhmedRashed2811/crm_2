@@ -73,3 +73,16 @@ def ensure_can_update_lead(ctx: RequestContext, lead: Lead):
         code="lead.update_forbidden", 
         message="You do not have permission to update this lead."
     )
+    
+    
+def ensure_can_import_leads(ctx: RequestContext):
+    """
+    Only Admins and Managers can perform bulk imports.
+    """
+    if user_in_groups(ctx.actor, ROLE_ADMIN + ROLE_MANAGER):
+        return
+        
+    raise PermissionDeniedError(
+        code="lead.import.forbidden", 
+        message="You do not have permission to import leads."
+    )

@@ -355,6 +355,12 @@ def add_timeline_event(
             "title": ev.title,
         },
     )
+    
+    # --- NEW: Trigger Re-scoring ---
+    # Only re-score for significant events to save performance
+    if event_type in ['call', 'meeting', 'system']: 
+        # 'system' captures "Form Submitted" or "Brochure Downloaded" if you log them as such
+        run_scoring_engine(lead)
 
     return {
         "timeline_event": {

@@ -1,17 +1,16 @@
 from typing import Dict, Any
 from django.db import transaction
-from leads.models import Lead, ScoringRule, ScoreBucket
+from leads.models import Lead, ScoringRule, ScoreBucket, LeadTimelineEvent
 
 def calculate_lead_score(lead: Lead) -> int:
     """
-    Dynamic Scoring Engine:
-    Fetches active rules from DB and applies them.
-    Logic: Sum of (Max Score per Category).
+    Dynamic Scoring Engine v2:
+    - Static Rules: Sum of (Max Score per Category).
+    - Behavioral Rules: Sum of (Points * Occurrence).
     """
     total_score = 0
     
-    # 1. Prepare Data for Matching
-    # Normalize inputs to lowercase for comparison
+    # --- 1. PREPARE STATIC DATA ---
     lead_data = {
         'source': str(lead.source or "").lower(),
         'budget': str((lead.qualification or {}).get("budget", "")).lower(),
@@ -19,43 +18,64 @@ def calculate_lead_score(lead: Lead) -> int:
         'country': str((lead.qualification or {}).get("country", "")).lower(),
     }
 
-    # 2. Fetch all Active Rules
-    # Optimization: In high scale, cache this query
+    # --- 2. PREPARE BEHAVIORAL DATA ---
+    # Fetch last 100 events to analyze behavior (optimization limit)
+    recent_events = LeadTimelineEvent.objects.filter(lead=lead).order_by('-created_at')[:100]
+    # We will match against 'title' or 'type' of the event
+    event_signatures = [
+        f"{e.type} {e.title}".lower() for e in recent_events
+    ]
+
+    # --- 3. FETCH RULES ---
     rules = ScoringRule.objects.filter(is_active=True)
 
-    # 3. Group Rules by Category to apply "Max per Category" logic
-    # This prevents "Manager" (5pts) and "Director" (15pts) adding up to 20.
-    # We want the single highest match per category.
-    category_scores = {}
+    # --- 4. APPLY LOGIC ---
+    static_category_scores = {}
+    behavioral_score = 0
 
     for rule in rules:
         cat = rule.category
-        if cat not in category_scores:
-            category_scores[cat] = []
+        rule_key = rule.keyword.lower()
+        points = rule.points
 
-        # Check Match
-        data_val = lead_data.get(cat, "")
-        rule_val = rule.keyword.lower()
-        matched = False
+        if cat == 'activity':
+            # BEHAVIORAL LOGIC (Cumulative)
+            # Check how many times this rule matches the events
+            match_count = 0
+            for ev_sig in event_signatures:
+                if rule.match_type == 'exact' and rule_key == ev_sig:
+                    match_count += 1
+                elif rule.match_type == 'contains' and rule_key in ev_sig:
+                    match_count += 1
+            
+            if match_count > 0:
+                behavioral_score += (points * match_count)
 
-        if rule.match_type == 'exact':
-            if data_val == rule_val:
+        else:
+            # STATIC LOGIC (Max per Category)
+            data_val = lead_data.get(cat, "")
+            matched = False
+
+            if rule.match_type == 'exact' and data_val == rule_key:
                 matched = True
-        elif rule.match_type == 'contains':
-            if rule_val in data_val:
+            elif rule.match_type == 'contains' and rule_key in data_val:
                 matched = True
+            
+            if matched:
+                if cat not in static_category_scores:
+                    static_category_scores[cat] = []
+                static_category_scores[cat].append(points)
+
+    # --- 5. SUMMARIZE ---
+    
+    # A. Add Static Scores (Max per category)
+    for scores in static_category_scores.values():
+        total_score += max(scores)
         
-        if matched:
-            category_scores[cat].append(rule.points)
-
-    # 4. Calculate Final Score
-    for cat, scores in category_scores.items():
-        if scores:
-            best_score = max(scores)
-            total_score += best_score
+    # B. Add Behavioral Score
+    total_score += behavioral_score
 
     return total_score
-
 def get_bucket_from_score(score: int) -> str:
     """
     Dynamic Bucket Assignment.

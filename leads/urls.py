@@ -19,7 +19,9 @@ from .views import (
     ScoreBucketDetailAPI,
     LeadCallLogListCreateAPI,
     LeadSiteVisitListCreateAPI,
-    LeadSiteVisitDetailAPI
+    LeadSiteVisitDetailAPI,
+    LeadImportAPI,
+    FacebookWebhookAPI
 )
 
 urlpatterns = [
@@ -56,5 +58,7 @@ urlpatterns = [
     path("v1/leads/<uuid:lead_id>/site-visits/", LeadSiteVisitListCreateAPI.as_view(), name="lead_site_visits"),
     path("v1/leads/<uuid:lead_id>/site-visits/<uuid:visit_id>/", LeadSiteVisitDetailAPI.as_view(), name="lead_site_visit_detail"),
 
+    path('v1/imports/', LeadImportAPI.as_view(), name='lead_import'),
+    path('v1/webhooks/facebook/', FacebookWebhookAPI.as_view(), name='webhook_facebook'),
 
 ]

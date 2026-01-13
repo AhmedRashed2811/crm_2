@@ -663,3 +663,144 @@ class LeadSiteVisitDetailAPI(APIView):
             return fail(errors=[{"code": "not_found", "message": e.message}], status=404)
         except PermissionDeniedError as e:
             return fail(errors=[{"code": "forbidden", "message": e.message}], status=403)
+ 
+ 
+ 
+ # leads/views.py
+
+from drf_spectacular.utils import extend_schema
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from core.api.responses import ok, fail
+from core.utils.context import build_ctx
+from leads.models import ImportBatch
+from leads.services.import_service import process_import_batch
+from core.api.exceptions import PermissionDeniedError
+
+class LeadImportAPI(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser] # <--- Vital for handling files
+
+    @extend_schema(
+        summary="Bulk Import Leads",
+        description="Upload an Excel (.xlsx) or CSV file to create leads in bulk.",
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'file': {
+                        'type': 'string',
+                        'format': 'binary'
+                    }
+                }
+            }
+        },
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "success": {"type": "boolean"},
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "batch_id": {"type": "string"},
+                            "status": {"type": "string"},
+                            "summary": {"type": "object"}
+                        }
+                    }
+                }
+            }
+        }
+    )
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return fail(errors=[{"code": "missing_file", "message": "No file uploaded"}], status=400)
+            
+        file_obj = request.FILES['file']
+        
+        if not (file_obj.name.endswith('.csv') or file_obj.name.endswith('.xlsx')):
+             return fail(errors=[{"code": "invalid_format", "message": "Only .csv or .xlsx allowed"}], status=400)
+
+        try:
+            batch = ImportBatch.objects.create(
+                uploaded_by=request.user,
+                file=file_obj,
+                status='PENDING'
+            )
+            
+            results = process_import_batch(build_ctx(request), str(batch.id))
+            
+            return ok(data={
+                "batch_id": str(batch.id),
+                "status": batch.status,
+                "summary": results
+            })
+            
+        except PermissionDeniedError as e:
+            return fail(errors=[{"code": e.code, "message": e.message}], status=403)
+        except Exception as e:
+            return fail(errors=[{"code": "import_error", "message": str(e)}], status=500)       
+        
+
+
+
+
+# leads/views.py
+
+from django.conf import settings
+from rest_framework.response import Response
+from rest_framework import status
+from leads.services.webhook_service import handle_facebook_webhook
+
+class FacebookWebhookAPI(APIView):
+    permission_classes = [] # Public Endpoint!
+    authentication_classes = [] # No Session Auth!
+
+    def get(self, request):
+        """
+        Facebook Verification Challenge.
+        FB sends a GET request to verify we own the server.
+        """
+        mode = request.query_params.get('hub.mode')
+        token = request.query_params.get('hub.verify_token')
+        challenge = request.query_params.get('hub.challenge')
+
+        if mode and token:
+            if mode == 'subscribe' and token == settings.WEBHOOK_VERIFY_TOKEN:
+                # Respond with the challenge to confirm validity
+                return Response(int(challenge), status=status.HTTP_200_OK)
+            else:
+                return Response(status=status.HTTP_403_FORBIDDEN)
+        
+        return Response(status=status.HTTP_400_BAD_REQUEST)
+
+    def post(self, request):
+        """
+        Receive Lead Data.
+        """
+        # In a real scenario, you verify X-Hub-Signature header here.
+        # For this test, we trust the payload structure.
+        
+        try:
+            # We assume a simplified structure for this mock
+            # { "object": "page", "entry": [ ... ] }
+            data = request.data
+            
+            # Simple extraction loop to find lead data in the mock payload
+            if 'entry' in data:
+                for entry in data['entry']:
+                    for change in entry.get('changes', []):
+                        if change.get('value'):
+                            # Process using our service
+                            # We create a System Context since there is no user
+                            sys_ctx = build_ctx(request) 
+                            handle_facebook_webhook(sys_ctx, change['value'])
+            
+            return Response({"status": "received"}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # Always return 200 to Facebook/Provider so they don't retry endlessly
+            # But log the error internally
+            print(f"Webhook Error: {str(e)}")
+            return Response({"status": "error", "message": str(e)}, status=status.HTTP_200_OK)

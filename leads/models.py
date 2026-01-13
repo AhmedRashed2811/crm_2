@@ -316,6 +316,7 @@ class ScoringRule(BaseUUIDModel):
         ('title', 'Job Title'),
         ('source', 'Source'),
         ('country', 'Country'),
+        ('activity', 'Activity / Behavior'),
     )
     
     MATCH_TYPE_CHOICES = (
@@ -419,3 +420,27 @@ class SiteVisit(BaseUUIDModel):
 
     def __str__(self):
         return f"Visit to {self.project_name} ({self.status})"
+    
+    
+    
+    
+from django.core.serializers.json import DjangoJSONEncoder
+
+class ImportBatch(BaseUUIDModel):
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('PARTIAL_FAILURE', 'Partial Failure'),
+        ('FAILED', 'Failed'),
+    )
+
+    uploaded_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True)
+    file = models.FileField(upload_to='imports/%Y/%m/%d/')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    
+    # Store results: {"total": 50, "success": 48, "errors": [{"row": 2, "msg": "..."}]}
+    summary = models.JSONField(default=dict, encoder=DjangoJSONEncoder)
+
+    def __str__(self):
+        return f"Batch {self.id} - {self.status}"
