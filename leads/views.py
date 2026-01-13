@@ -247,6 +247,8 @@ class LeadChangeStageCommandAPI(APIView):
         if not ser.is_valid():
             return fail(errors=[{"code": "validation_error", "message": "Invalid payload", "details": ser.errors}], status=400)
 
+        print(f'ser.validated_data.get("payload") = {ser.validated_data.get("payload")}')
+        print(f'data=request.data = {request.data}') 
         try:
             data = change_stage(
                 build_ctx(request),

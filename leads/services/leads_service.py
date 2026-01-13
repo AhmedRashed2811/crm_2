@@ -261,6 +261,8 @@ def change_stage(ctx: RequestContext, lead_id, action: str, to_stage: str, paylo
  
     before = _lead_to_dict(lead)
     
+    print(f"payload = {payload}")
+    print(f"to_stage = {to_stage}")
     payload = _validate_reason_code_for_terminal(to_stage, payload or {})
 
     # Workflow transition (guards enforced inside engine.transition)
@@ -274,12 +276,25 @@ def change_stage(ctx: RequestContext, lead_id, action: str, to_stage: str, paylo
 
     # Mirror stage for fast filtering
     lead.stage = result.instance.state
+    
+    
+    # --- NEW: Capture Lost Reason for Analytics ---
+    if lead.stage in ["LOST", "DO_NOT_PURSUE"] and "reason_code" in payload:
+        from leads.models import ReasonCode
+        rc = ReasonCode.objects.filter(code=payload["reason_code"]).first()
+        lead.lost_reason = rc
+    elif lead.stage not in ["LOST", "DO_NOT_PURSUE"]:
+        # Clear reason if lead is reactivated (moved back to NEW/CONTACTED)
+        lead.lost_reason = None
+    # -----------------------------------------------
+    
+    
 
     # Business effects based on stage
     if lead.stage == "CONTACTED" and not lead.first_contact_at:
         lead.first_contact_at = timezone.now()
 
-    lead.save(update_fields=["stage", "first_contact_at", "updated_at"])
+    lead.save(update_fields=["stage", "lost_reason", "first_contact_at", "updated_at"])
 
     after = _lead_to_dict(lead)
 
@@ -372,6 +387,7 @@ def _validate_reason_code_for_terminal(to_stage: str, payload: Dict[str, Any]) -
         return payload
 
     reason_code = (payload or {}).get("reason_code")
+    print(f"payload = {payload}") 
     if not reason_code or str(reason_code).strip() == "":
         raise ValidationError(
             code="lead.reason_code.required",

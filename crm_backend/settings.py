@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "audit",
     "workflow",
     "leads",
+    "analytics"
 ]
 
 MIDDLEWARE = [

@@ -11,6 +11,7 @@ urlpatterns = [
 
     path("api-auth/", include("rest_framework.urls")),  # ✅ add this
     path("api/", include("leads.urls")),
+    path('api/', include('analytics.urls')),
     path("api/v1/users/", UserListAPI.as_view(), name="global_user_list"),
 ]
 

@@ -73,6 +73,17 @@ class Lead(BaseUUIDModel):
     # External references (integrations)
     external_refs = models.JSONField(null=True, blank=True)
 
+    
+    lost_reason = models.ForeignKey(
+        'ReasonCode', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='lost_leads',
+        help_text="The specific reason code if stage is LOST or DO_NOT_PURSUE"
+    )
+    
+    
     def __str__(self) -> str:
         return f"{self.full_name or 'Lead'} ({self.primary_phone or self.primary_email})"
 
